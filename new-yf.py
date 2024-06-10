@@ -140,7 +140,7 @@ tickers = st.text_area("Enter tickers (comma-separated)", "JEL.L,ARTNA").split('
 
 if st.button("Scrape Data"):
     # Define the paths to Chromium and ChromeDriver
-    chrome_path = "/usr/bin/chromium-browser"
+    chrome_path = "/usr/bin/chromium"
     chrome_driver_path = "/usr/bin/chromedriver"
 
     options = Options()
