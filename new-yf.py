@@ -154,7 +154,7 @@ if st.button("Scrape Data"):
     options.binary_location = chrome_path
 
     # Initialize the Chrome driver
-    driver = webdriver.Chrome(executable_path=chrome_driver_path, options=options)
+    driver = webdriver.Chrome(options=options)
 
     # Switch to classic Yahoo Finance
     switch_to_classic(driver)
