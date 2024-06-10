@@ -5,3 +5,4 @@ selenium
 lxml
 openpyxl
 XlsxWriter
+chromedriver-autoinstaller
