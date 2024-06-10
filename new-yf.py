@@ -139,10 +139,6 @@ st.title("Yahoo Finance Scraper")
 tickers = st.text_area("Enter tickers (comma-separated)", "JEL.L,ARTNA").split(',')
 
 if st.button("Scrape Data"):
-    # Define the paths to Chromium and ChromeDriver
-    chrome_path = "/usr/bin/chromium"
-    chrome_driver_path = "/usr/bin/chromedriver"
-
     options = Options()
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
     options.add_argument('--headless')  # Ensure headless mode is enabled
@@ -150,11 +146,9 @@ if st.button("Scrape Data"):
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
     options.add_argument('--window-size=1920,1080')
-    options.binary_location = chrome_path
 
-    # Initialize the Chrome driver
-    service = Service(executable_path=chrome_driver_path)
-    driver = webdriver.Chrome(service=service, options=options)
+    # Initialize the Chrome driver without specifying the path
+    driver = webdriver.Chrome(options=options)
 
     # Switch to classic Yahoo Finance
     switch_to_classic(driver)
