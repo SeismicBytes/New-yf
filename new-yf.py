@@ -8,6 +8,7 @@ import streamlit as st
 import warnings
 from io import BytesIO
 import chromedriver_autoinstaller
+import os
 
 pd.options.display.float_format = '{:.0f}'.format
 warnings.filterwarnings("ignore")
@@ -149,6 +150,7 @@ if st.button("Scrape Data"):
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
     options.add_argument('--window-size=1920,1080')
+    options.binary_location = "/usr/bin/chromium-browser"  # Path to Chromium browser
 
     # Initialize the Chrome driver
     driver = webdriver.Chrome(options=options)
