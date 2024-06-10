@@ -7,3 +7,5 @@ openpyxl
 XlsxWriter
 chromedriver-autoinstaller
 chromium
+chromium-browser
+chromedriver
