@@ -1,219 +1,444 @@
+import yfinance as yf
 import pandas as pd
-from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-import time
-from selenium.webdriver.chrome.options import Options
 import streamlit as st
-import warnings
+import base64
 from io import BytesIO
+from PIL import Image
+import math
+import logging # Use logging for cleaner error/info messages
 
-pd.options.display.float_format = '{:.0f}'.format
-warnings.filterwarnings("ignore")
+# --- Configuration ---
+# Use logging instead of just print/st.error for more structured output
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Function to switch to classic Yahoo Finance
-def switch_to_classic(driver):
-    driver.get("https://finance.yahoo.com/")
-    driver.implicitly_wait(4)
+# Constants for file paths and default values
+LOGO_PATH = "ppl_logo.jpg"
+BACKGROUND_PATH = "wp.jpg"
+DEFAULT_TICKERS = "GOOGL,AAPL,MSFT,AMZN" # Example default tickers
+FINANCIAL_COLUMNS_TO_SELECT = [
+    # Profile Info (Merged)
+    'Ticker', 'LongName', 'Long_Business_Summary', 'Country', 'Sector', 'Industry',
+    'Full_Time_Employees', 'Website', 'Phone',
+    # Financial Info
+    'Full_Date', 'Year_Index', 'Currency', 'Financial_Currency',
+    # Key Financial Metrics (Ensure these match yfinance output)
+    'Total Revenue', 'Operating Revenue', 'Cost Of Revenue', 'Gross Profit',
+    'Operating Expense', 'Selling General and Administrative', # Often listed under Operating Expense
+    'Selling General And Administration', # Check if yfinance uses this exact name
+    'Operating Income', 'EBIT', 'Normalized EBITDA', # EBIT/EBITDA might not always be directly available or need calculation
+    'Net Income'
+]
+
+# --- Helper Functions ---
+
+def set_background(image_file: str):
+    """Sets the background image for the Streamlit app."""
     try:
-        switch_button = driver.find_element(by=By.XPATH, value="//a[contains(@href, '/go-back') and contains(@class, 'opt-in-link')]")
-        switch_button.click()
-        time.sleep(2)  # Give some time for the switch to take effect
+        with open(image_file, "rb") as file:
+            encoded_string = base64.b64encode(file.read()).decode()
+        st.markdown(
+            f"""
+            <style>
+            .stApp {{
+                background-image: url(data:image/png;base64,{encoded_string});
+                background-size: cover;
+                background-repeat: no-repeat;
+                background-attachment: fixed; /* Keeps background fixed during scroll */
+            }}
+            /* Make headers slightly transparent white for better visibility */
+            h1, h2, h3, h4, h5, h6 {{
+                 color: white;
+                 background-color: rgba(0, 0, 0, 0.3); /* Slight dark overlay */
+                 padding: 5px;
+                 border-radius: 5px;
+            }}
+             /* Style buttons */
+            .stButton>button {{
+                color: #4F8BF9; /* Button text color */
+                background-color: #FFFFFF; /* Button background color */
+                border: 1px solid #4F8BF9; /* Button border */
+                border-radius: 5px;
+                padding: 0.5em 1em;
+            }}
+            .stButton>button:hover {{
+                background-color: #E6E6E6; /* Slightly darker on hover */
+                color: #3F6EBD;
+                border-color: #3F6EBD;
+            }}
+            /* Style text input/area */
+            .stTextInput>div>div>input, .stTextArea>div>div>textarea {{
+                background-color: rgba(255, 255, 255, 0.9); /* Slightly transparent white */
+                border-radius: 5px;
+            }}
+             /* Style dataframes */
+            .stDataFrame {{
+                 background-color: rgba(255, 255, 255, 0.9);
+                 border-radius: 5px;
+            }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        logging.info(f"Background image '{image_file}' set successfully.")
+    except FileNotFoundError:
+        st.error(f"Background image file not found: {image_file}")
+        logging.error(f"Background image file not found: {image_file}")
     except Exception as e:
-        st.warning(f"Error switching to classic: {e}")
+        st.error(f"Error setting background: {e}")
+        logging.error(f"Error setting background: {e}")
 
-def scrape_financial_data(driver, ticker):
-    url = f"https://finance.yahoo.com/quote/{ticker}/financials?p={ticker}"
-    driver.get(url)
-    driver.implicitly_wait(4)  # Wait for the page to load
+def get_financial_data(ticker: str) -> pd.DataFrame:
+    """
+    Fetches annual and TTM financial data for a given stock ticker using yfinance.
 
-    # Clicking the 'Expand All' button if present
+    Args:
+        ticker: The stock ticker symbol (e.g., "AAPL").
+
+    Returns:
+        A pandas DataFrame containing financial data, including a TTM row.
+        Returns a DataFrame with only the 'Ticker' column if an error occurs.
+    """
     try:
-        expand_button = driver.find_element(by=By.XPATH, value="//*[@id='Col1-1-Financials-Proxy']/section/div[2]/button/div/span")
-        expand_button.click()
-    except Exception:
-        pass  # If the button is not found, proceed
+        logging.info(f"Fetching financial data for {ticker}...")
+        stock = yf.Ticker(ticker)
+        info = stock.info # Fetch info once
 
-    html = driver.execute_script('return document.body.innerHTML;')
-    soup = BeautifulSoup(html, 'lxml')
+        # --- Annual Data ---
+        financials = stock.financials
+        if financials.empty:
+            st.warning(f"No annual financial data found for {ticker}.")
+            return pd.DataFrame({'Ticker': [ticker]})
 
-    features = soup.find_all('div', class_='D(tbr)')
-    if not features:
-        return pd.DataFrame()  # Return empty DataFrame if no data found
-
-    # Extracting header dates
-    header_dates = []
-    # Correctly escape parentheses in class names for CSS selectors
-    date_headers = soup.select('.D\\(tbhg\\) .Ta\\(c\\)')
-    for header in date_headers:
-        date_span = header.find('span')
-        if date_span:
-            header_dates.append(date_span.text)
-    
-    headers = [item.text for item in features[0].find_all('div', class_='D(ib)')]
-    final_data = []
-    for feature in features[1:]:
-        temp_data = [item.text for item in feature.find_all('div', class_='D(tbc)')]
-        final_data.append(temp_data)
-
-    df = pd.DataFrame(final_data)
-    if len(df.columns) == len(headers):
-        df.columns = headers
-        df = df.set_index(headers[0]).T
+        df = financials.T.copy() # Transpose for years as rows
         df['Ticker'] = ticker
+        df['Full_Date'] = pd.to_datetime(df.index).strftime('%Y-%m-%d') # Format date
+        df = df.reset_index(drop=True)
+        df['Year_Index'] = df.index + 1 # Annual rows start from 1
 
-        # Extracting currency information
-        features_Curr = soup.find_all('div', class_='C($tertiaryColor) Fz(12px)')
-        if features_Curr:
-            df['Currency'] = features_Curr[0].text[-4:]
+        # Add currency info from general info
+        df['Currency'] = info.get('currency', 'N/A')
+        df['Financial_Currency'] = info.get('financialCurrency', 'N/A')
 
-        features_Curr_2 = soup.find_all('span', class_='Fz(xs) C($tertiaryColor) Mstart(25px) smartphone_Mstart(0px) smartphone_D(b) smartphone_Mt(5px)')
-        if features_Curr_2:
-            df['Financial_Currency'] = features_Curr_2[0].text.split(".")[0][-3:]
+        # --- TTM Data ---
+        q_financials = stock.quarterly_financials
+        ttm_data = {'Ticker': ticker, 'Full_Date': "TTM", 'Year_Index': 0}
+        ttm_data['Currency'] = info.get('currency', 'N/A')
+        ttm_data['Financial_Currency'] = info.get('financialCurrency', 'N/A')
 
-        # Assign a year index, corresponding year, and full date to each row
-        df['Year_Index'] = range(len(header_dates))
-        df['Full_Date'] = header_dates
+        if not q_financials.empty and q_financials.shape[1] >= 4:
+            # Sum the latest four quarters for TTM
+            ttm_series = q_financials.iloc[:, :4].sum(axis=1, numeric_only=True)
+            # Include only metrics present in the annual data columns
+            common_metrics = df.columns.intersection(ttm_series.index)
+            for metric in common_metrics:
+                 if metric not in ttm_data: # Avoid overwriting Ticker, Date etc.
+                    ttm_data[metric] = ttm_series.get(metric) # Use .get for safety
+        else:
+            st.info(f"Insufficient quarterly data to calculate TTM for {ticker}. TTM financial values set to None.")
+            # Set financial metrics to None if TTM cannot be calculated
+            financial_metrics = [col for col in df.columns if col not in ['Ticker', 'Full_Date', 'Year_Index', 'Currency', 'Financial_Currency']]
+            for metric in financial_metrics:
+                ttm_data[metric] = None
 
-        return df
+        ttm_df = pd.DataFrame([ttm_data])
 
-    return pd.DataFrame()  # Return empty DataFrame if headers and data columns don't match
+        # Combine TTM and annual data
+        final_df = pd.concat([ttm_df, df], ignore_index=True, sort=False) # Ensure TTM is first
 
-known_countries = ['Afghanistan', 'Aland Islands', 'Albania', 'Algeria', 'American Samoa', 'Andorra', 'Angola', 'Anguilla', 'Antarctica', 'Antigua and Barbuda', 'Argentina', 'Armenia', 'Aruba', 'Australia', 'Austria', 'Azerbaijan', 'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize', 'Benin', 'Bermuda', 'Bhutan', 'Bolivia, Plurinational State of', 'Bonaire, Sint Eustatius and Saba', 'Bosnia and Herzegovina', 'Botswana', 'Bouvet Island', 'Brazil', 'British Indian Ocean Territory', 'British Virgin Islands', 'Brunei Darussalam', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Cambodia', 'Cameroon', 'Canada', 'Cape Verde', 'Cayman Islands', 'Central African Republic', 'Chad', 'Chile', 'China', 'Christmas Island', 'Cocos (Keeling) Islands', 'Colombia', 'Comoros', 'Congo', 'Congo, The Democratic Republic of the', 'Cook Islands', 'Costa Rica', "Côte d'Ivoire", 'Croatia', 'Cuba', 'Curaçao', 'Cyprus', 'Czech Republic', 'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic', 'Ecuador', 'Egypt', 'El Salvador', 'Equatorial Guinea', 'Eritrea', 'Estonia', 'Ethiopia', 'Falkland Islands (Malvinas)', 'Faroe Islands', 'Fiji', 'Finland', 'France', 'French Guiana', 'French Polynesia', 'French Southern Territories', 'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Gibraltar', 'Greece', 'Greenland', 'Grenada', 'Guadeloupe', 'Guam', 'Guatemala', 'Guernsey', 'Guinea', 'Guinea-Bissau', 'Guyana', 'Haiti', 'Heard Island and McDonald Islands', 'Holy See (Vatican City State)', 'Honduras', 'Hong Kong', 'Hungary', 'Iceland', 'India', 'Indonesia', 'Iran, Islamic Republic of', 'Iraq', 'Ireland', 'Isle of Man', 'Israel', 'Italy', 'Jamaica', 'Japan', 'Jersey', 'Jordan', 'Kazakhstan', 'Kenya', 'Kiribati', "Korea, Democratic People's Republic of", 'Korea, Republic of', 'Kuwait', 'Kyrgyzstan', "Lao People's Democratic Republic", 'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg', 'Macao', 'Macau','Macedonia', 'Republic of', 'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands', 'Martinique', 'Mauritania', 'Mauritius', 'Mayotte', 'Mexico', 'Micronesia, Federated States of', 'Moldova, Republic of', 'Monaco', 'Mongolia', 'Montenegro', 'Montserrat', 'Morocco', 'Mozambique', 'Myanmar', 'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Caledonia', 'New Zealand', 'Nicaragua', 'Niger', 'Nigeria', 'Niue', 'Norfolk Island', 'Northern Mariana Islands', 'Norway', 'Oman', 'Pakistan', 'Palau', 'Palestinian Territory, Occupied', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Pitcairn', 'Poland', 'Portugal', 'Puerto Rico', 'Qatar', 'Reunion', 'Romania', 'Russia', 'Russian Federation', 'Rwanda', 'Saint Barthélemy', 'Saint Helena, Ascension and Tristan da Cunha', 'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Martin (French part)', 'Saint Pierre and Miquelon', 'Saint Vincent and the Grenadines', 'Samoa', 'San Marino', 'Sao Tome and Principe', 'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Sint Maarten (Dutch part)', 'Slovakia', 'Slovenia', 'Solomon Islands', 'Somalia', 'South Africa','South Korea', 'South Georgia and the South Sandwich Islands', 'Spain', 'Sri Lanka', 'Sudan', 'Suriname', 'South Sudan', 'Svalbard and Jan Mayen', 'Swaziland', 'Sweden', 'Switzerland', 'Syrian Arab Republic', 'Taiwan, Province of China','Taiwan', 'Tajikistan', 'Tanzania, United Republic of', 'Thailand', 'Timor-Leste', 'Togo', 'Tokelau', 'Tonga', 'Trinidad and Tobago', 'Tunisia', 'Turkey', 'Turkmenistan', 'Turks and Caicos Islands', 'Tuvalu', 'Uganda', 'Ukraine', 'United Arab Emirates', 'United Kingdom', 'United States', 'United States Minor Outlying Islands', 'Uruguay', 'Uzbekistan', 'Vanuatu', 'Venezuela, Bolivarian Republic of', 'Vietnam', 'Virgin Islands, British', 'Virgin Islands, U.S.', 'Wallis and Futuna', 'Yemen', 'Zambia', 'Zimbabwe']
-
-def scrape_profile_data(driver, ticker):
-    url = f"https://finance.yahoo.com/quote/{ticker}/profile?p={ticker}"
-    driver.get(url)
-    driver.implicitly_wait(4)  # Wait for page to load
-
-    html = driver.execute_script('return document.body.innerHTML;')
-    soup = BeautifulSoup(html, 'lxml')
-
-    company_info = {}
-    company_info['Ticker'] = ticker
-
-    try:
-        company_info['LongName'] = soup.find('h3', class_='Fz(m) Mb(10px)').text
-        company_info['Long_Business_Summary'] = soup.find('p', class_='Mt(15px) Lh(1.6)').text
-        
-        address_block = driver.find_element(by=By.XPATH, value="//*[@id='Col1-0-Profile-Proxy']/section/div[1]/div/div/p[1]")
-        address_lines = address_block.text.split("\n")
-
-        # Extract the country from the address lines
-        country = None
-        for line in address_lines:
-            # Check if this line is a known country
-            if line in known_countries:
-                country = line
-                break
-
-        # If country is found, assign it, otherwise assign a default value or keep it None
-        company_info['Country'] = country if country else 'Not Found'
-
-        labels = soup.find_all('span', text=['Sector(s)', 'Industry', 'Full Time Employees'])
-        for label in labels:
-            value = label.find_next('span', class_='Fw(600)')
-            if value and value.text.isdigit():
-                # Special handling for Full Time Employees since it's a number
-                company_info['Full_Time_Employees'] = value.text
-            elif value:
-                # For Sector and Industry
-                key = label.text[:-1] if label.text.endswith('(s)') else label.text  # Remove the trailing (s) from "Sector(s)"
-                company_info[key] = value.text
-
-        # Extracting additional link texts
-        features_5 = soup.find_all('a', class_='C($linkColor)')
-        if len(features_5) >= 2:
-            company_info['Website'] = features_5[-1].text
-            company_info['Phone'] = features_5[-2].text
+        logging.info(f"Successfully fetched financial data for {ticker}.")
+        return final_df
 
     except Exception as e:
-        st.warning(f"Error scraping {ticker}: {e}")
+        st.warning(f"Error getting financial data for {ticker}: {e}")
+        logging.warning(f"Error getting financial data for {ticker}: {e}")
+        # Return a minimal DataFrame to allow merging later
+        return pd.DataFrame({'Ticker': [ticker]})
 
-    return pd.DataFrame([company_info])
+def get_profile_data(ticker: str) -> pd.DataFrame:
+    """
+    Fetches company profile data for a given stock ticker using yfinance.
 
-# Streamlit app
-st.title("Yahoo Finance Scraper")
+    Args:
+        ticker: The stock ticker symbol (e.g., "AAPL").
 
-tickers = st.text_area("Enter tickers (comma-separated)", "JEL.L,ARTNA").split(',')
+    Returns:
+        A pandas DataFrame containing profile data.
+        Returns a DataFrame with only the 'Ticker' column if an error occurs.
+    """
+    try:
+        logging.info(f"Fetching profile data for {ticker}...")
+        stock = yf.Ticker(ticker)
+        info = stock.info
 
-if st.button("Scrape Data"):
-    options = Options()
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-    options.add_argument('--headless')  # Ensure headless mode is enabled
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--window-size=1920,1080')
+        # Use .get() with default values for robustness
+        company_info = {
+            'Ticker': ticker,
+            'LongName': info.get('longName', 'N/A'),
+            'Long_Business_Summary': info.get('longBusinessSummary', 'N/A'),
+            'Country': info.get('country', 'N/A'),
+            'Sector': info.get('sector', 'N/A'),
+            'Industry': info.get('industry', 'N/A'),
+            'Full_Time_Employees': info.get('fullTimeEmployees', 'N/A'), # Keep as is or try converting to int/str
+            'Website': info.get('website', 'N/A'),
+            'Phone': info.get('phone', 'N/A')
+        }
+        # Convert employees to string for consistent display, handling None/missing
+        company_info['Full_Time_Employees'] = str(company_info['Full_Time_Employees']) if company_info['Full_Time_Employees'] != 'N/A' else 'N/A'
 
-    # Initialize the Chrome driver without specifying the path
-    driver = webdriver.Chrome(options=options)
 
-    # Switch to classic Yahoo Finance
-    switch_to_classic(driver)
+        logging.info(f"Successfully fetched profile data for {ticker}.")
+        return pd.DataFrame([company_info])
 
-    financial_dfs = []
-    profile_dfs = []
-    for ticker in tickers:
-        ticker = ticker.strip()
-        financial_df = scrape_financial_data(driver, ticker)
-        profile_df = scrape_profile_data(driver, ticker)
-        financial_dfs.append(financial_df)
-        profile_dfs.append(profile_df)
+    except Exception as e:
+        st.warning(f"Error getting profile data for {ticker}: {e}")
+        logging.warning(f"Error getting profile data for {ticker}: {e}")
+        # Return a minimal DataFrame to allow merging later
+        return pd.DataFrame({'Ticker': [ticker]})
 
-    combined_financial_df = pd.concat(financial_dfs, ignore_index=True)
-    combined_profile_df = pd.concat(profile_dfs, ignore_index=True)
-
-    # Merge the two DataFrames on the 'Ticker' column
-    final_df = pd.merge(combined_profile_df, combined_financial_df, on='Ticker')
-
-    driver.quit()
-
-    # List of columns you want to select
-    columns_to_select = [
-        'Ticker', 'Full_Date', 'Year_Index', 'LongName', 'Long_Business_Summary',
-        'Currency', 'Financial_Currency', 'Sector(s)', 'Industry',
-        'Full Time Employees', 'Full_Time_Employees', 'Website', 'Phone', 'Country',
-        'Total Revenue', 'Operating Revenue', 'Cost of Revenue', 'Gross Profit',
-        'Operating Expense', 'Selling General and Administrative',
-        'Selling & Marketing Expense', 'EBIT', 'Normalized EBITDA',
-        'Net Income from Continuing & Discontinued Operation', 'Operating Income'
-    ]
-
-    # Filter out only the columns that exist in your DataFrame
-    existing_columns = [col for col in columns_to_select if col in final_df.columns]
-
-    # Select only the existing columns from your DataFrame
-    Final_DT = final_df[existing_columns]
-
-    # Display the first few rows of the DataFrame
-    st.dataframe(Final_DT)
-
-    # Convert specified columns to numeric and multiply by 1000
-    columns_to_convert = [
-        'Total Revenue', 'Operating Revenue', 'Cost of Revenue', 'Gross Profit',
-        'Operating Expense', 'Selling General and Administrative', 'EBIT',
-        'Normalized EBITDA',
-        'Net Income from Continuing & Discontinued Operation',
-        'Operating Income'
-    ]
-
-    for column in columns_to_convert:
-        if column in Final_DT.columns:
-            Final_DT[column] = Final_DT[column].str.replace(',', '').str.replace('$', '')
-            Final_DT[column] = pd.to_numeric(Final_DT[column], errors='coerce')
-            Final_DT[column] = Final_DT[column].apply(lambda x: x * 1000)
-
-    # Provide download link
+def create_excel_download(df: pd.DataFrame, filename: str) -> bytes:
+    """Creates an Excel file in memory for downloading."""
     output = BytesIO()
+    # Use ExcelWriter to potentially add more sheets or formatting later
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        Final_DT.to_excel(writer, index=False, sheet_name='Sheet1')
-    processed_data = output.getvalue()
+        df.to_excel(writer, index=False, sheet_name='Data')
+        # Optional: Auto-adjust column widths (can be slow for large data)
+        # worksheet = writer.sheets['Data']
+        # for i, col in enumerate(df.columns):
+        #     column_len = max(df[col].astype(str).map(len).max(), len(col)) + 2
+        #     worksheet.set_column(i, i, column_len)
+    return output.getvalue()
 
-    st.download_button(
-        label="Download data as Excel",
-        data=processed_data,
-        file_name='financial_data.xlsx',
-        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    )
+# --- Streamlit App ---
+
+# Page Configuration (do this first)
+st.set_page_config(
+    page_title="Phronesis Pulse 2.0",
+    page_icon="📊", # Add a relevant emoji icon
+    layout="wide"
+)
+
+# Apply background image
+set_background(BACKGROUND_PATH)
+
+# --- Header ---
+col_logo, col_title = st.columns([1, 5]) # Adjust ratio as needed
+
+with col_logo:
+    try:
+        logo = Image.open(LOGO_PATH)
+        st.image(logo, width=120) # Slightly larger logo
+    except FileNotFoundError:
+        st.error(f"Logo image not found: {LOGO_PATH}")
+        logging.error(f"Logo image not found: {LOGO_PATH}")
+    except Exception as e:
+        st.error(f"Error loading logo: {e}")
+        logging.error(f"Error loading logo: {e}")
+
+
+with col_title:
+    st.markdown("<h1 style='text-align: center; margin-top: 20px;'>Phronesis Pulse 2.0</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: lightgrey;'>Financial Data Extractor</p>", unsafe_allow_html=True)
+
+
+st.markdown("---") # Visual separator
+
+# --- Initialize Session State ---
+if 'tickers' not in st.session_state:
+    st.session_state.tickers = []
+if 'processed_data' not in st.session_state:
+    st.session_state.processed_data = pd.DataFrame()
+if 'all_extracted_data' not in st.session_state:
+    st.session_state.all_extracted_data = pd.DataFrame()
+
+
+# --- Ticker Input Area ---
+st.subheader("1. Enter Stock Tickers")
+ticker_input = st.text_area(
+    "Enter ticker symbols separated by commas (e.g., GOOGL,AAPL,MSFT). Avoid spaces.",
+    value=DEFAULT_TICKERS,
+    height=100,
+    key="ticker_input_area" # Unique key for the widget
+)
+
+if st.button("Load Tickers", key="load_tickers_button"):
+    # Basic validation: split, strip whitespace, remove empty strings
+    tickers_raw = [ticker.strip().upper() for ticker in ticker_input.split(',') if ticker.strip()]
+    if tickers_raw:
+        st.session_state.tickers = tickers_raw
+        st.success(f"{len(st.session_state.tickers)} tickers loaded: {', '.join(st.session_state.tickers)}")
+        # Clear previous results when new tickers are loaded
+        st.session_state.processed_data = pd.DataFrame()
+        st.session_state.all_extracted_data = pd.DataFrame()
+    else:
+        st.warning("Please enter valid ticker symbols.")
+        st.session_state.tickers = [] # Clear if input is invalid
+
+
+# --- Data Extraction Section ---
+if st.session_state.tickers:
+    st.markdown("---")
+    st.subheader("2. Configure and Extract Data")
+
+    # Batch size selection (optional, consider removing if not strictly needed or if ticker list is usually small)
+    # max_tickers_per_batch = st.slider(
+    #     "Select maximum tickers per processing batch (if needed)",
+    #     1, len(st.session_state.tickers),
+    #     min(10, len(st.session_state.tickers)), # Default to 10 or total, whichever is smaller
+    #     key="batch_slider"
+    # )
+    # num_batches = math.ceil(len(st.session_state.tickers) / max_tickers_per_batch)
+
+    if st.button("Extract Financial Data", key="extract_data_button"):
+        all_financial_dfs = []
+        all_profile_dfs = []
+        failed_tickers = []
+        total_tickers_to_process = len(st.session_state.tickers)
+
+        st.info(f"Starting data extraction for {total_tickers_to_process} tickers...")
+        progress_bar = st.progress(0)
+        status_text = st.empty() # Placeholder for status updates
+
+        # Process all tickers in one go (removed batching for simplicity unless necessary)
+        for i, ticker in enumerate(st.session_state.tickers):
+            status_text.text(f"Processing {ticker} ({i+1}/{total_tickers_to_process})...")
+
+            profile_df = get_profile_data(ticker)
+            financial_df = get_financial_data(ticker)
+
+            # Check if data fetching was successful (minimal df indicates failure)
+            if len(profile_df.columns) > 1: # More than just 'Ticker'
+                 all_profile_dfs.append(profile_df)
+            else:
+                 failed_tickers.append(f"{ticker} (profile)")
+
+            if len(financial_df.columns) > 1: # More than just 'Ticker'
+                all_financial_dfs.append(financial_df)
+            # No separate else for financial, as profile failure is more critical for merge
+            elif f"{ticker} (profile)" not in failed_tickers: # Avoid double counting if profile also failed
+                 failed_tickers.append(f"{ticker} (financial)")
+
+
+            # Update progress
+            progress = (i + 1) / total_tickers_to_process
+            progress_bar.progress(progress)
+
+        status_text.success(f"Data extraction complete for {total_tickers_to_process} tickers.")
+        progress_bar.empty() # Remove progress bar after completion
+
+        if failed_tickers:
+            st.warning(f"Could not retrieve complete data for: {', '.join(failed_tickers)}")
+
+        if not all_profile_dfs or not all_financial_dfs:
+            st.error("No data could be extracted. Please check tickers and network connection.")
+            st.session_state.processed_data = pd.DataFrame()
+            st.session_state.all_extracted_data = pd.DataFrame()
+        else:
+            # --- Consolidate and Process Data ---
+            st.markdown("---")
+            st.subheader("3. Processed Results")
+
+            # Combine all successfully fetched dataframes
+            combined_profile_df = pd.concat(all_profile_dfs, ignore_index=True)
+            combined_financial_df = pd.concat(all_financial_dfs, ignore_index=True)
+
+            # Merge profile and financial data
+            # Use 'outer' merge to keep tickers even if one part failed, though checks above should minimize this
+            final_df = pd.merge(combined_profile_df, combined_financial_df, on='Ticker', how='inner') # Use 'inner' if both profile and financial are required
+
+            if final_df.empty:
+                st.error("Data merging resulted in an empty DataFrame. Check fetched data.")
+                st.session_state.processed_data = pd.DataFrame()
+                st.session_state.all_extracted_data = pd.DataFrame()
+
+            else:
+                # Store the full merged data before selecting columns
+                st.session_state.all_extracted_data = final_df.copy()
+
+                # Select and Order Display Columns
+                # Get columns that actually exist in the merged dataframe
+                existing_display_columns = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col in final_df.columns]
+                missing_display_columns = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col not in final_df.columns]
+
+                if missing_display_columns:
+                     st.info(f"Note: The following requested columns were not found in the data and will be omitted: {', '.join(missing_display_columns)}")
+
+                # Create the display dataframe
+                final_display_dt = final_df[existing_display_columns]
+
+                # Store the processed data for display
+                st.session_state.processed_data = final_display_dt
+
+# --- Display Results and Download ---
+if not st.session_state.processed_data.empty:
+    st.markdown("---")
+    st.subheader("4. View and Download Data")
+
+    st.dataframe(st.session_state.processed_data)
+
+    # --- Download Buttons ---
+    col_dl1, col_dl2 = st.columns(2)
+
+    with col_dl1:
+        # Download Button for Displayed/Formatted Data
+        try:
+            excel_display_data = create_excel_download(
+                st.session_state.processed_data,
+                "Pulse_yf_FormattedData.xlsx"
+            )
+            st.download_button(
+                label="📥 Download Displayed Data (Excel)",
+                data=excel_display_data,
+                file_name='Pulse_yf_FormattedData.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                key="download_display_button"
+            )
+        except Exception as e:
+            st.error(f"Error creating displayed data download file: {e}")
+            logging.error(f"Error creating displayed data download file: {e}")
+
+
+    with col_dl2:
+       # Download Button for All Extracted Data
+       if not st.session_state.all_extracted_data.empty:
+            try:
+                # Optional: Reorder columns for the "All Data" file (display columns first)
+                all_cols = st.session_state.all_extracted_data.columns.tolist()
+                ordered_cols = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col in all_cols] + \
+                               [col for col in all_cols if col not in FINANCIAL_COLUMNS_TO_SELECT]
+                all_data_ordered = st.session_state.all_extracted_data[ordered_cols]
+
+                excel_all_data = create_excel_download(
+                    all_data_ordered, # Use the reordered dataframe
+                    "Pulse_yf_AllExtractedData.xlsx"
+                )
+                st.download_button(
+                    label="📦 Download All Extracted Data (Excel)",
+                    data=excel_all_data,
+                    file_name='Pulse_yf_AllExtractedData.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    key="download_all_button"
+                )
+            except Exception as e:
+                 st.error(f"Error creating all data download file: {e}")
+                 logging.error(f"Error creating all data download file: {e}")
+
+
+    # --- Summary Statistics ---
+    st.markdown("---")
+    st.subheader("Extraction Summary")
+    total_submitted = len(st.session_state.tickers)
+    successful_tickers = st.session_state.processed_data['Ticker'].nunique() # Count unique tickers in the final display DF
+    failed_count = total_submitted - successful_tickers
+
+    st.metric("Tickers Submitted", total_submitted)
+    st.metric("Tickers Successfully Processed", successful_tickers)
+    st.metric("Tickers with Issues", failed_count)
+
+elif 'tickers' in st.session_state and st.session_state.tickers:
+    # Show this only if tickers are loaded but no data is processed yet
+    # (or if processing failed completely)
+    st.info("Click 'Extract Financial Data' to begin.")
+
+# Optional: Footer
+st.markdown("---")
+st.markdown("<p style='text-align: center; color: grey; font-size: small;'>Phronesis Pulse v2.0 - Powered by yfinance and Streamlit</p>", unsafe_allow_html=True)
