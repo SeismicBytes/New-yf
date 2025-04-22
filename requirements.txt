@@ -1,10 +1,7 @@
 streamlit
 pandas
-beautifulsoup4
-selenium
+yfinance
 lxml
 openpyxl
 XlsxWriter
-chromedriver-autoinstaller
-chromium
-chromedriver
+
