@@ -23,7 +23,7 @@ FINANCIAL_COLUMNS_TO_SELECT = [
     'Full_Date', 'Year_Index', 'Currency', 'Financial_Currency',
     # Key Financial Metrics (Ensure these match yfinance output)
     'Total Revenue', 'Operating Revenue', 'Cost Of Revenue', 'Gross Profit',
-    'Operating Expense', 'Selling General and Administrative', # Often listed under Operating Expense
+    'Operating Expense', 'Selling General And Administrative', # Often listed under Operating Expense
     'Selling General And Administration', # Check if yfinance uses this exact name
     'Operating Income', 'EBIT', 'Normalized EBITDA', # EBIT/EBITDA might not always be directly available or need calculation
     'Net Income'
