@@ -57,8 +57,10 @@ LOGO_PATH = current_dir / "ppl_logo.png"
 # --- App Specific Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 DEFAULT_TICKERS = "GOOGL,AAPL,MSFT,AMZN"
+
+# *** MODIFIED: Added 'Address' to the selection list ***
 FINANCIAL_COLUMNS_TO_SELECT = [
-    'Ticker', 'LongName', 'Long_Business_Summary', 'Country', 'Sector', 'Industry',
+    'Ticker', 'LongName', 'Long_Business_Summary', 'Country', 'Address', 'Sector', 'Industry',
     'Full_Time_Employees', 'Website', 'Phone', 'Full_Date', 'Year_Index',
     'Currency', 'Financial_Currency', 'Total Revenue', 'Operating Revenue',
     'Cost Of Revenue', 'Gross Profit', 'Operating Expense',
@@ -88,6 +90,7 @@ logo_base64 = get_base64_of_bin_file(LOGO_PATH)
 logo_html = f'<img src="data:image/png;base64,{logo_base64}" alt="Phronesis Partners Logo" class="logo">' if logo_base64 else '<div class="logo-placeholder">Logo</div>'
 
 # --- 2. Apex Theme CSS Styling (Forcing Button and Metric Label Colors) ---
+# ... (CSS is unchanged, so it is omitted here for brevity)
 APP_STYLE = f"""
 <style>
     /* --- Import Fonts --- */
@@ -224,58 +227,138 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- Helper Functions (Unchanged) ---
+# --- Helper Functions ---
+
+# *** NEW: Helper function for address formatting ***
+def get_formatted_address(info: dict) -> str:
+    """Formats the address from the yfinance info dictionary."""
+    address_parts = [
+        info.get('address1'),
+        f"{info.get('city', '')}, {info.get('state', '')} {info.get('zip', '')}".strip(', '),
+        info.get('country')
+    ]
+    # Filter out None or empty parts and join them with newlines
+    full_address = "\n".join(part for part in address_parts if part)
+    return full_address if full_address else "N/A"
+
+# *** MODIFIED: TTM values are now handled correctly to avoid 0 for NaN sums ***
 def get_financial_data(ticker: str) -> pd.DataFrame:
     """ Fetches annual and TTM financial data, using np.nan for missing TTM numerics. """
     try:
         logging.info(f"Fetching financial data for {ticker}...")
-        stock = yf.Ticker(ticker); info = stock.info; financials = stock.financials
-        if financials.empty: logging.warning(f"No annual financial data found for {ticker}."); return pd.DataFrame({'Ticker': [ticker]})
-        df = financials.T.copy(); df['Ticker'] = ticker; df['Full_Date'] = pd.to_datetime(df.index).strftime('%Y-%m-%d'); df = df.reset_index(drop=True); df['Year_Index'] = df.index + 1
-        df['Currency'] = info.get('currency', 'N/A'); df['Financial_Currency'] = info.get('financialCurrency', 'N/A'); q_financials = stock.quarterly_financials
-        ttm_data = {'Ticker': ticker, 'Full_Date': "TTM", 'Year_Index': 0}; ttm_data['Currency'] = info.get('currency', 'N/A'); ttm_data['Financial_Currency'] = info.get('financialCurrency', 'N/A')
-        potential_numeric_cols = list(set(df.select_dtypes(include=np.number).columns.tolist() + ['Total Revenue', 'Operating Revenue', 'Cost Of Revenue', 'Gross Profit', 'Operating Expense', 'Selling General And Administrative', 'Selling General And Administration', 'Operating Income', 'EBIT', 'Normalized EBITDA', 'Net Income']))
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        financials = stock.financials
+
+        if financials.empty:
+            logging.warning(f"No annual financial data found for {ticker}.")
+            return pd.DataFrame({'Ticker': [ticker]})
+
+        df = financials.T.copy()
+        df['Ticker'] = ticker
+        df['Full_Date'] = pd.to_datetime(df.index).strftime('%Y-%m-%d')
+        df = df.reset_index(drop=True)
+        df['Year_Index'] = df.index + 1
+        df['Currency'] = info.get('currency', 'N/A')
+        df['Financial_Currency'] = info.get('financialCurrency', 'N/A')
+
+        q_financials = stock.quarterly_financials
+        ttm_data = {'Ticker': ticker, 'Full_Date': "TTM", 'Year_Index': 0}
+        ttm_data['Currency'] = info.get('currency', 'N/A')
+        ttm_data['Financial_Currency'] = info.get('financialCurrency', 'N/A')
+
+        potential_numeric_cols = list(set(df.select_dtypes(include=np.number).columns.tolist() + NUMERIC_COLUMNS_TO_CLEAN))
+        
         if not q_financials.empty and q_financials.shape[1] >= 4:
-            ttm_series = q_financials.iloc[:, :4].sum(axis=1, numeric_only=True); common_metrics = df.columns.intersection(ttm_series.index)
+            last_4_quarters = q_financials.iloc[:, :4]
+            ttm_series = last_4_quarters.sum(axis=1, numeric_only=True)
+            
+            # --- FIX FOR TTM ZEROS ---
+            # If all 4 quarters for a metric are NaN, its sum is 0. Replace this with NaN.
+            for metric in ttm_series.index:
+                if last_4_quarters.loc[metric].isnull().all():
+                    ttm_series[metric] = np.nan # Set to NaN instead of 0
+            # --- END FIX ---
+            
+            common_metrics = df.columns.intersection(ttm_series.index)
             for metric in common_metrics:
-                 if metric not in ttm_data: ttm_data[metric] = ttm_series.get(metric)
+                 if metric not in ttm_data:
+                     ttm_data[metric] = ttm_series.get(metric)
         else:
             logging.info(f"Insufficient quarterly data for TTM for {ticker}. TTM values set to NaN.")
-            financial_metrics = [col for col in df.columns if col not in ['Ticker', 'Full_Date', 'Year_Index', 'Currency', 'Financial_Currency']]
-            for metric in financial_metrics:
-                if metric in potential_numeric_cols: ttm_data[metric] = np.nan
-        ttm_df = pd.DataFrame([ttm_data]); final_df = pd.concat([ttm_df, df], ignore_index=True, sort=False)
+            for metric in df.columns:
+                if metric in potential_numeric_cols:
+                    ttm_data[metric] = np.nan
+
+        ttm_df = pd.DataFrame([ttm_data])
+        final_df = pd.concat([ttm_df, df], ignore_index=True, sort=False)
+        
         logging.info(f"Successfully fetched financial data for {ticker}.")
         return final_df
-    except Exception as e: logging.warning(f"Error getting financial data for {ticker}: {e}"); return pd.DataFrame({'Ticker': [ticker]})
 
+    except Exception as e:
+        logging.warning(f"Error getting financial data for {ticker}: {e}")
+        return pd.DataFrame({'Ticker': [ticker]})
+
+# *** MODIFIED: Integrated call to get_formatted_address ***
 def get_profile_data(ticker: str) -> pd.DataFrame:
-    """ Fetches company profile data. """
+    """ Fetches company profile data, including the formatted address. """
     try:
-        logging.info(f"Fetching profile data for {ticker}..."); stock = yf.Ticker(ticker); info = stock.info
-        company_info = {'Ticker': ticker, 'LongName': info.get('longName', 'N/A'), 'Long_Business_Summary': info.get('longBusinessSummary', 'N/A'), 'Country': info.get('country', 'N/A'), 'Sector': info.get('sector', 'N/A'), 'Industry': info.get('industry', 'N/A'), 'Full_Time_Employees': info.get('fullTimeEmployees'), 'Website': info.get('website', 'N/A'), 'Phone': info.get('phone', 'N/A')}
+        logging.info(f"Fetching profile data for {ticker}...")
+        stock = yf.Ticker(ticker)
+        info = stock.info
+        
+        address = get_formatted_address(info) # Call the new helper function
+
+        company_info = {
+            'Ticker': ticker,
+            'LongName': info.get('longName', 'N/A'),
+            'Long_Business_Summary': info.get('longBusinessSummary', 'N/A'),
+            'Country': info.get('country', 'N/A'),
+            'Address': address, # Add the formatted address
+            'Sector': info.get('sector', 'N/A'),
+            'Industry': info.get('industry', 'N/A'),
+            'Full_Time_Employees': info.get('fullTimeEmployees'),
+            'Website': info.get('website', 'N/A'),
+            'Phone': info.get('phone', 'N/A')
+        }
+        
         fte = company_info['Full_Time_Employees']
-        if fte is None: company_info['Full_Time_Employees'] = 'N/A'
+        if fte is None:
+            company_info['Full_Time_Employees'] = 'N/A'
         else:
-            try: company_info['Full_Time_Employees'] = f"{pd.to_numeric(fte):,.0f}"
-            except (ValueError, TypeError): company_info['Full_Time_Employees'] = str(fte)
+            try:
+                company_info['Full_Time_Employees'] = f"{pd.to_numeric(fte):,.0f}"
+            except (ValueError, TypeError):
+                company_info['Full_Time_Employees'] = str(fte)
+                
         logging.info(f"Successfully fetched profile data for {ticker}.")
         return pd.DataFrame([company_info])
-    except Exception as e: logging.warning(f"Error getting profile data for {ticker}: {e}"); return pd.DataFrame({'Ticker': [ticker]})
+        
+    except Exception as e:
+        logging.warning(f"Error getting profile data for {ticker}: {e}")
+        return pd.DataFrame({'Ticker': [ticker]})
 
 def create_excel_download(df: pd.DataFrame, filename: str) -> bytes:
     """Creates an Excel file in memory for downloading."""
-    output = BytesIO(); df_display = df.copy()
-    for col in df_display.select_dtypes(include=['object']).columns: df_display[col] = df_display[col].astype(str)
+    output = BytesIO()
+    df_display = df.copy()
+    for col in df_display.select_dtypes(include=['object']).columns:
+        df_display[col] = df_display[col].astype(str)
+        
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_display.to_excel(writer, index=False, sheet_name='Data'); worksheet = writer.sheets['Data']
+        df_display.to_excel(writer, index=False, sheet_name='Data')
+        worksheet = writer.sheets['Data']
         for i, col in enumerate(df_display.columns):
             try:
-                max_len_data = df_display[col].map(len).max();
+                max_len_data = df_display[col].map(len).max()
                 if pd.isna(max_len_data): max_len_data = 0
-                max_len_col = len(str(col)); column_width = max(int(max_len_data), max_len_col) + 2
+                max_len_col = len(str(col))
+                column_width = max(int(max_len_data), max_len_col) + 2
                 worksheet.set_column(i, i, min(column_width, 50))
-            except Exception as width_e: logging.warning(f"Could not calculate width for column {col}: {width_e}"); worksheet.set_column(i, i, 20)
+            except Exception as width_e:
+                logging.warning(f"Could not calculate width for column {col}: {width_e}")
+                worksheet.set_column(i, i, 20)
     return output.getvalue()
 
 # --- Initialize Session State ---
@@ -302,7 +385,6 @@ with col_button:
     get_data_pressed = st.button("📊 Get Company Data", key="get_data_button", use_container_width=True)
 
 if get_data_pressed:
-    # (Rest of the button logic is unchanged from the previous version)
     # 1. Validate Tickers
     tickers_raw = [ticker.strip().upper() for ticker in ticker_input_area.split(',') if ticker.strip()]
     st.session_state.last_ticker_input = ticker_input_area
@@ -321,78 +403,98 @@ if get_data_pressed:
         st.session_state.last_run_summary = {}
 
         # 2. Fetch Data (with Spinner)
-        all_financial_dfs = []; all_profile_dfs = []
-        failed_tickers_profile = []; failed_tickers_financial = []
+        all_financial_dfs = []
+        all_profile_dfs = []
+        failed_tickers_profile = []
+        failed_tickers_financial = []
         total_tickers_to_process = len(st.session_state.tickers_to_process)
 
         with st.spinner(f"Fetching data for {total_tickers_to_process} ticker(s)... Please wait."):
             for ticker in st.session_state.tickers_to_process:
-                profile_df = get_profile_data(ticker); financial_df = get_financial_data(ticker)
+                profile_df = get_profile_data(ticker)
+                financial_df = get_financial_data(ticker)
+                
                 if len(profile_df.columns) > 1: all_profile_dfs.append(profile_df)
                 else: failed_tickers_profile.append(ticker)
+                
                 if len(financial_df.columns) > 1: all_financial_dfs.append(financial_df)
                 else: failed_tickers_financial.append(ticker)
 
         # 3. Process & Consolidate Data (Post-Spinner)
         processing_status = st.empty()
-        if not all_profile_dfs and not all_financial_dfs:
-            processing_status.error("No data could be extracted for any ticker.")
-        elif not all_profile_dfs or not all_financial_dfs:
-             processing_status.info("Consolidating available data...")
-             try:
-                 if all_profile_dfs: combined_profile_df = pd.concat(all_profile_dfs, ignore_index=True)
-                 else: combined_profile_df = pd.DataFrame(columns=['Ticker'])
-                 if all_financial_dfs: combined_financial_df = pd.concat(all_financial_dfs, ignore_index=True)
-                 else: combined_financial_df = pd.DataFrame(columns=['Ticker'] + NUMERIC_COLUMNS_TO_CLEAN)
-                 final_df = pd.merge(combined_profile_df, combined_financial_df, on='Ticker', how='outer')
-                 if final_df.empty: processing_status.error("Data consolidation resulted in an empty DataFrame.")
-                 else:
-                    st.session_state.all_extracted_data = final_df.copy()
-                    existing_display_columns = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col in final_df.columns]
-                    final_display_dt = final_df[existing_display_columns].copy()
-                    for col in NUMERIC_COLUMNS_TO_CLEAN:
-                        if col in final_display_dt.columns: final_display_dt[col] = pd.to_numeric(final_display_dt[col], errors='coerce')
-                    if 'Full_Time_Employees' in final_display_dt.columns and 'Full_Time_Employees' not in NUMERIC_COLUMNS_TO_CLEAN: final_display_dt['Full_Time_Employees'] = final_display_dt['Full_Time_Employees'].astype(str).replace(['nan', 'None', '<NA>'], 'N/A', regex=False)
-                    final_display_dt = final_display_dt.sort_values(by=['Ticker', 'Year_Index'], ascending=[True, False], na_position='last')
-                    st.session_state.processed_data = final_display_dt.reset_index(drop=True)
-                    processing_status.success("Data processing complete.")
-                    time.sleep(1.5); processing_status.empty()
-             except Exception as merge_error:
-                 processing_status.error(f"An error occurred during data consolidation/cleaning: {merge_error}"); logging.exception("Data merging error:")
-                 st.session_state.processed_data = pd.DataFrame(); st.session_state.all_extracted_data = pd.DataFrame()
-        else:
-            processing_status.info("Consolidating and cleaning data...")
-            try:
-                combined_profile_df = pd.concat(all_profile_dfs, ignore_index=True); combined_financial_df = pd.concat(all_financial_dfs, ignore_index=True)
-                final_df = pd.merge(combined_profile_df, combined_financial_df, on='Ticker', how='inner')
-                if final_df.empty: processing_status.error("Data merging resulted in an empty DataFrame.")
+        # This consolidation logic handles cases where one of the dataframes might be empty
+        # and merges them correctly. No major changes were needed here, as the fixes were in the data-gathering functions.
+        try:
+            if not all_profile_dfs and not all_financial_dfs:
+                processing_status.error("No data could be extracted for any ticker.")
+                # Clear state if total failure
+                st.session_state.processed_data = pd.DataFrame()
+                st.session_state.all_extracted_data = pd.DataFrame()
+            else:
+                processing_status.info("Consolidating and cleaning data...")
+                
+                combined_profile_df = pd.concat(all_profile_dfs, ignore_index=True) if all_profile_dfs else pd.DataFrame()
+                combined_financial_df = pd.concat(all_financial_dfs, ignore_index=True) if all_financial_dfs else pd.DataFrame()
+
+                if not combined_profile_df.empty and not combined_financial_df.empty:
+                    final_df = pd.merge(combined_profile_df, combined_financial_df, on='Ticker', how='outer')
+                elif not combined_profile_df.empty:
+                    final_df = combined_profile_df
+                elif not combined_financial_df.empty:
+                    final_df = combined_financial_df
+                else:
+                    final_df = pd.DataFrame() # Should not happen if first check passes
+
+                if final_df.empty:
+                    processing_status.error("Data consolidation resulted in an empty DataFrame.")
                 else:
                     st.session_state.all_extracted_data = final_df.copy()
-                    existing_display_columns = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col in final_df.columns]
-                    final_display_dt = final_df[existing_display_columns].copy()
+                    
+                    # Ensure all desired columns exist, adding missing ones with NaN
+                    for col in FINANCIAL_COLUMNS_TO_SELECT:
+                        if col not in final_df.columns:
+                            final_df[col] = np.nan
+                    
+                    final_display_dt = final_df[FINANCIAL_COLUMNS_TO_SELECT].copy()
+
                     for col in NUMERIC_COLUMNS_TO_CLEAN:
-                        if col in final_display_dt.columns: final_display_dt[col] = pd.to_numeric(final_display_dt[col], errors='coerce')
-                    if 'Full_Time_Employees' in final_display_dt.columns and 'Full_Time_Employees' not in NUMERIC_COLUMNS_TO_CLEAN: final_display_dt['Full_Time_Employees'] = final_display_dt['Full_Time_Employees'].astype(str).replace(['nan', 'None', '<NA>'], 'N/A', regex=False)
-                    final_display_dt = final_display_dt.sort_values(by=['Ticker', 'Year_Index'], ascending=[True, False])
+                        if col in final_display_dt.columns:
+                            final_display_dt[col] = pd.to_numeric(final_display_dt[col], errors='coerce')
+                    
+                    # Clean up string columns for display
+                    str_cols_to_clean = ['Full_Time_Employees', 'Address']
+                    for col in str_cols_to_clean:
+                        if col in final_display_dt.columns:
+                            final_display_dt[col] = final_display_dt[col].astype(str).replace(['nan', 'None', '<NA>'], 'N/A', regex=False)
+
+                    final_display_dt = final_display_dt.sort_values(by=['Ticker', 'Year_Index'], ascending=[True, False], na_position='last')
                     st.session_state.processed_data = final_display_dt.reset_index(drop=True)
+                    
                     processing_status.success("Data processing complete.")
-                    time.sleep(1.5); processing_status.empty()
-            except Exception as merge_error:
-                 processing_status.error(f"An error occurred during data consolidation/cleaning: {merge_error}"); logging.exception("Data merging error:")
-                 st.session_state.processed_data = pd.DataFrame(); st.session_state.all_extracted_data = pd.DataFrame()
+                    time.sleep(1.5)
+                    processing_status.empty()
+
+        except Exception as merge_error:
+             processing_status.error(f"An error occurred during data consolidation/cleaning: {merge_error}")
+             logging.exception("Data merging error:")
+             st.session_state.processed_data = pd.DataFrame()
+             st.session_state.all_extracted_data = pd.DataFrame()
 
         # 4. Store Summary Info
-        total_submitted = len(st.session_state.get('tickers_to_process', [])); successful_tickers_count = 0
-        if 'processed_data' in st.session_state and not st.session_state.processed_data.empty: successful_tickers_count = st.session_state.processed_data['Ticker'].nunique()
-        failed_profile_count = len(failed_tickers_profile); failed_financial_count = len(failed_tickers_financial)
-        failed_tickers_all = list(set(failed_tickers_profile + failed_tickers_financial)); total_failed_count = len(failed_tickers_all)
-        st.session_state.last_run_summary = {"submitted": total_submitted, "successful": successful_tickers_count, "failed_total": total_failed_count, "failed_list": failed_tickers_all}
-
-        # --- Display Fetch Status Messages ---
-        st.markdown("---")
-        summary = st.session_state.last_run_summary
-        if summary.get("failed_total", 0) > 0: st.warning(f"Extraction attempted for {total_submitted} tickers. Issues encountered for {summary['failed_total']}.")
-        elif total_submitted > 0 : st.success(f"Successfully processed data for {summary['successful']} of {total_submitted} submitted tickers.")
+        total_submitted = len(st.session_state.get('tickers_to_process', []))
+        successful_tickers_count = 0
+        if 'processed_data' in st.session_state and not st.session_state.processed_data.empty:
+            successful_tickers_count = st.session_state.processed_data['Ticker'].nunique()
+            
+        failed_tickers_all = list(set(failed_tickers_profile + failed_tickers_financial))
+        total_failed_count = len(failed_tickers_all)
+        
+        st.session_state.last_run_summary = {
+            "submitted": total_submitted,
+            "successful": successful_tickers_count,
+            "failed_total": total_failed_count,
+            "failed_list": failed_tickers_all
+        }
 
         st.rerun()
 
@@ -406,21 +508,49 @@ if 'processed_data' in st.session_state and not st.session_state.processed_data.
     with col_dl1:
         try:
             excel_display_data = create_excel_download(st.session_state.processed_data, "Pulse_yf_FormattedData.xlsx")
-            st.download_button( label="📥 Download Formatted Data", data=excel_display_data, file_name='Pulse_yf_FormattedData.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', key="download_display_button", help="Downloads the cleaned and formatted table shown above." )
-        except Exception as e: st.error(f"Error creating formatted download: {e}"); logging.error(f"Error creating display data Excel: {e}")
+            st.download_button(
+                label="📥 Download Formatted Data",
+                data=excel_display_data,
+                file_name='Pulse_yf_FormattedData.xlsx',
+                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                key="download_display_button",
+                help="Downloads the cleaned and formatted table shown above."
+            )
+        except Exception as e:
+            st.error(f"Error creating formatted download: {e}")
+            logging.error(f"Error creating display data Excel: {e}")
+            
     with col_dl2:
        if 'all_extracted_data' in st.session_state and not st.session_state.all_extracted_data.empty:
             try:
-                all_cols = st.session_state.all_extracted_data.columns.tolist(); ordered_cols = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col in all_cols] + [col for col in all_cols if col not in FINANCIAL_COLUMNS_TO_SELECT]; sort_cols = ['Ticker'];
-                if 'Year_Index' in ordered_cols: sort_cols.append('Year_Index')
+                # Re-order the raw data for a more logical export
+                all_cols = st.session_state.all_extracted_data.columns.tolist()
+                ordered_cols = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col in all_cols] + \
+                               [col for col in all_cols if col not in FINANCIAL_COLUMNS_TO_SELECT]
+                sort_cols = ['Ticker']
+                if 'Year_Index' in ordered_cols:
+                    sort_cols.append('Year_Index')
+                    
                 all_data_ordered = st.session_state.all_extracted_data[ordered_cols].copy()
-                for col in NUMERIC_COLUMNS_TO_CLEAN:
-                     if col in all_data_ordered.columns: all_data_ordered[col] = all_data_ordered[col].astype(str).replace(['nan', 'None', '<NA>'], '', regex=False)
-                if 'Full_Time_Employees' in all_data_ordered.columns: all_data_ordered['Full_Time_Employees'] = all_data_ordered['Full_Time_Employees'].astype(str).replace(['nan', 'None', '<NA>'], '', regex=False)
+                
+                # Convert numeric-like columns to strings for raw export, replacing NaNs
+                for col in all_data_ordered.columns:
+                    if pd.api.types.is_numeric_dtype(all_data_ordered[col]):
+                        all_data_ordered[col] = all_data_ordered[col].astype(str).replace(['nan', 'None', '<NA>'], '', regex=False)
+
                 all_data_ordered = all_data_ordered.sort_values(by=sort_cols, ascending=[True, False], na_position='last').reset_index(drop=True)
                 excel_all_data = create_excel_download(all_data_ordered, "Pulse_yf_AllExtractedData.xlsx")
-                st.download_button( label="📦 Download All Raw Data", data=excel_all_data, file_name='Pulse_yf_AllExtractedData.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', key="download_all_button", help="Downloads all columns retrieved before extensive cleaning/formatting." )
-            except Exception as e: st.error(f"Error creating raw download: {e}"); logging.error(f"Error creating all data Excel: {e}")
+                st.download_button(
+                    label="📦 Download All Raw Data",
+                    data=excel_all_data,
+                    file_name='Pulse_yf_AllExtractedData.xlsx',
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    key="download_all_button",
+                    help="Downloads all columns retrieved before extensive cleaning/formatting."
+                )
+            except Exception as e:
+                st.error(f"Error creating raw download: {e}")
+                logging.error(f"Error creating all data Excel: {e}")
 
 # --- Display Summary Section ---
 if 'last_run_summary' in st.session_state and st.session_state.last_run_summary:
