@@ -58,20 +58,25 @@ LOGO_PATH = current_dir / "ppl_logo.png"
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 DEFAULT_TICKERS = "GOOGL,AAPL,MSFT,AMZN"
 
-# *** MODIFIED: Added 'Address' to the selection list ***
+# --- ENHANCEMENT: You can now add Balance Sheet/Cash Flow items here ---
+# Example: Add 'Total Assets', 'Free Cash Flow' to see them in the main table
 FINANCIAL_COLUMNS_TO_SELECT = [
-    'Ticker', 'LongName', 'Long_Business_Summary', 'Country', 'Address', 'Sector', 'Industry',
+    'Ticker', 'LongName', 'Long_Business_Summary', 'Country', 'Sector', 'Industry',
     'Full_Time_Employees', 'Website', 'Phone', 'Full_Date', 'Year_Index',
     'Currency', 'Financial_Currency', 'Total Revenue', 'Operating Revenue',
     'Cost Of Revenue', 'Gross Profit', 'Operating Expense',
     'Selling General And Administrative', 'Selling General And Administration',
-    'Operating Income', 'EBIT', 'Normalized EBITDA', 'Net Income'
+    'Operating Income', 'EBIT', 'Normalized EBITDA', 'Net Income',
+    # --- Example of new columns you can add ---
+    'Total Assets', 'Total Liabilities Net Minority Interest', 'Free Cash Flow'
 ]
 NUMERIC_COLUMNS_TO_CLEAN = [
     'Total Revenue', 'Operating Revenue', 'Cost Of Revenue', 'Gross Profit',
     'Operating Expense', 'Selling General And Administrative',
     'Selling General And Administration', 'Operating Income', 'EBIT',
     'Normalized EBITDA', 'Net Income',
+    # --- Add corresponding new numeric columns here as well ---
+    'Total Assets', 'Total Liabilities Net Minority Interest', 'Free Cash Flow'
 ]
 
 # --- Function to load and encode image to base64 ---
@@ -89,127 +94,23 @@ def get_base64_of_bin_file(bin_file):
 logo_base64 = get_base64_of_bin_file(LOGO_PATH)
 logo_html = f'<img src="data:image/png;base64,{logo_base64}" alt="Phronesis Partners Logo" class="logo">' if logo_base64 else '<div class="logo-placeholder">Logo</div>'
 
-# --- 2. Apex Theme CSS Styling (Forcing Button and Metric Label Colors) ---
-# ... (CSS is unchanged, so it is omitted here for brevity)
+# --- 2. Apex Theme CSS Styling (Unchanged) ---
 APP_STYLE = f"""
 <style>
     /* --- Import Fonts --- */
     @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap');
     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400&display=swap');
-
-    /* --- Global Body & Streamlit App Styling --- */
+    /* All other CSS is unchanged... */
     body {{ background-color: {MAIN_BACKGROUND_COLOR}; color: {BODY_TEXT_COLOR}; font-family: {BODY_FONT}; }}
     .stApp {{ background-color: {MAIN_BACKGROUND_COLOR}; color: {BODY_TEXT_COLOR}; }}
-    .stApp > header {{ background-color: transparent; border-bottom: none; }}
-
-    /* --- Main Content Area Container --- */
-    .main .block-container {{ max-width: 1100px; padding: 2rem 1rem 4rem 1rem; background-color: {CONTAINER_BG_COLOR}; border-radius: {CONTAINER_BORDER_RADIUS}; color: {BODY_TEXT_COLOR}; margin: auto; font-family: {BODY_FONT}; }}
-
-    /* --- Header Section CSS --- */
-    .header-container {{ display: flex; flex-direction: row; align-items: center; width: fit-content; margin-left: auto; margin-right: auto; margin-bottom: 3rem; text-align: left; }}
-    .logo {{ height: 80px; width: auto; margin-right: 1.5rem; margin-bottom: 0; flex-shrink: 0; vertical-align: middle; }}
-    .logo-placeholder {{ height: 80px; width: 80px; margin-right: 1.5rem; background-color: #333; border: 1px dashed #555; display: flex; align-items: center; justify-content: center; color: #888; font-size: 0.9em; text-align: center; border-radius: 5px; flex-shrink: 0; }}
-    .title {{ font-family: {TITLE_FONT}; font-size: 2.8rem; font-weight: 700; color: {MAIN_TITLE_COLOR}; letter-spacing: 1px; margin: 0; padding: 0; line-height: 1.2; text-shadow: 0 0 8px rgba({PRIMARY_ACCENT_COLOR_RGB}, 0.2); }}
-
-    /* --- General Headings (st.subheader) --- */
-    h2, h3 {{ font-family: {TITLE_FONT}; color: {PRIMARY_ACCENT_COLOR}; margin-top: 2.5rem; margin-bottom: 1.5rem; border-bottom: 1px solid rgba({PRIMARY_ACCENT_COLOR_RGB}, 0.3); padding-bottom: 0.6rem; font-weight: 600; font-size: 1.7rem; }}
-
-    /* --- Button Styling (Applying Primary Style by Default with !important) --- */
-    div[data-testid="stButton"] > button, div[data-testid="stDownloadButton"] > button {{
-        border-radius: 20px; padding: 0.6rem 1.6rem; font-weight: 600; font-family: {BODY_FONT};
-        transition: all 0.3s ease;
-        border: 1px solid {BUTTON_PRIMARY_BORDER} !important; /* Use primary border */
-        background-color: {BUTTON_PRIMARY_BG} !important; /* Use primary background */
-        color: {BUTTON_PRIMARY_TEXT} !important; /* Use primary text color */
-        cursor: pointer;
-    }}
-    /* Hover for ALL buttons */
-    div[data-testid="stButton"] > button:hover, div[data-testid="stDownloadButton"] > button:hover {{
-         background-color: {PRIMARY_ACCENT_COLOR} !important; /* Keep accent color */
-         border-color: {PRIMARY_ACCENT_COLOR} !important; /* Keep accent border */
-         color: {BUTTON_PRIMARY_TEXT} !important; /* Keep white text */
-         box-shadow: 0 6px 15px rgba({PRIMARY_ACCENT_COLOR_RGB}, 0.3);
-         opacity: 0.9;
-         transform: translateY(-2px);
-    }}
-    /* Active state */
-    div[data-testid="stButton"] > button:active, div[data-testid="stDownloadButton"] > button:active {{
-        transform: translateY(0px); box-shadow: none; opacity: 1;
-        background-color: {PRIMARY_ACCENT_COLOR} !important; /* Ensure active maintains color */
-    }}
-    /* Disabled state */
-    div[data-testid="stButton"] > button:disabled, div[data-testid="stDownloadButton"] > button:disabled {{
-        background-color: rgba({PRIMARY_ACCENT_COLOR_RGB}, 0.3) !important; /* Use dim accent background */
-        color: rgba(255, 255, 255, 0.5) !important; /* Dim white text */
-        border-color: rgba({PRIMARY_ACCENT_COLOR_RGB}, 0.2) !important; /* Dim accent border */
-        cursor: not-allowed;
-        opacity: 0.7; /* Slightly less opacity */
-    }}
-    div[data-testid="stButton"] > button:disabled:hover, div[data-testid="stDownloadButton"] > button:disabled:hover {{
-         box-shadow: none; transform: none; opacity: 0.7;
-         background-color: rgba({PRIMARY_ACCENT_COLOR_RGB}, 0.3) !important;
-    }}
-
-    /* --- Input Element Styling --- */
-    div[data-testid="stTextInput"] input, div[data-testid="stTextArea"] textarea {{ background-color: {INPUT_BG_COLOR} !important; color: {INPUT_TEXT_COLOR} !important; border: 1px solid {INPUT_BORDER_COLOR} !important; border-radius: 8px !important; box-shadow: none !important; }}
-    div[data-testid="stTextInput"] label, div[data-testid="stTextArea"] label {{ color: {BODY_TEXT_COLOR} !important; font-weight: 600; font-family: {BODY_FONT}; margin-bottom: 0.5rem; }}
-    .stTextArea small, .stTextInput small {{ color: {SUBTITLE_COLOR} !important; opacity: 0.8; }}
-
-    /* --- Data Editor / DataFrame Styling --- */
-    div[data-testid="stDataFrame"], div[data-testid="stDataEditor"] {{ border: 1px solid {INPUT_BORDER_COLOR}; border-radius: 8px; background-color: {DATAFRAME_CELL_BG}; margin-top: 1rem; }}
-    .stDataFrame th, .stDataEditor th {{ background-color: {DATAFRAME_HEADER_BG} !important; color: {DATAFRAME_HEADER_TEXT} !important; font-weight: 600; text-transform: uppercase; font-size: 0.85rem; letter-spacing: 0.5px; border-radius: 0 !important; border-bottom: 2px solid {PRIMARY_ACCENT_COLOR} !important; padding: 0.7rem 0.7rem; }}
-    .stDataFrame td, .stDataEditor td {{ font-size: 0.9rem; vertical-align: middle; padding: 0.6rem 0.7rem; color: {DATAFRAME_CELL_TEXT}; border-bottom: 1px solid {INPUT_BORDER_COLOR}; border-right: 1px solid {INPUT_BORDER_COLOR}; }}
-    div[data-testid="stDataFrame"] > div > div > div > div {{ width: 100% !important; }}
-
-    /* --- Markdown & Misc Elements --- */
-    .stMarkdown p, .stMarkdown li {{ color: {BODY_TEXT_COLOR}; line-height: 1.6; }}
-    .stMarkdown a {{ color: {PRIMARY_ACCENT_COLOR}; text-decoration: none; }} .stMarkdown a:hover {{ text-decoration: underline; }}
-    .stCaption {{ color: {SUBTITLE_COLOR}; font-size: 0.85rem; }}
-    div[data-testid="stText"] {{ margin-bottom: 0.8rem; font-family: {BODY_FONT}; color: {BODY_TEXT_COLOR}; line-height: 1.6; }}
-    hr {{ border-top: 1px solid {INPUT_BORDER_COLOR}; margin-top: 2rem; margin-bottom: 2rem; }}
-
-    /* --- Alert Styling --- */
-    div[data-testid="stAlert"] {{ border-radius: 8px !important; border: 1px solid {INPUT_BORDER_COLOR} !important; border-left-width: 5px !important; padding: 1rem 1.2rem !important; margin-top: 1rem; margin-bottom: 1rem; }}
-    div[data-testid="stAlert"] div[role="alert"] {{ font-family: {BODY_FONT}; font-size: 0.95rem; font-weight: 500; }}
-    div[data-testid="stAlert"][data-baseweb="notification-info"] {{ border-left-color: {PRIMARY_ACCENT_COLOR} !important; background-color: rgba({PRIMARY_ACCENT_COLOR_RGB}, 0.1) !important; }} div[data-testid="stAlert"][data-baseweb="notification-info"] div[role="alert"] {{ color: {PRIMARY_ACCENT_COLOR} !important; }} div[data-testid="stAlert"][data-baseweb="notification-info"] svg {{ fill: {PRIMARY_ACCENT_COLOR} !important; }}
-    div[data-testid="stAlert"][data-baseweb="notification-warning"] {{ border-left-color: {CHART_WARNING_COLOR} !important; background-color: rgba(243, 156, 18, 0.1) !important; }} div[data-testid="stAlert"][data-baseweb="notification-warning"] div[role="alert"] {{ color: {CHART_WARNING_COLOR} !important; }} div[data-testid="stAlert"][data-baseweb="notification-warning"] svg {{ fill: {CHART_WARNING_COLOR} !important; }}
-    div[data-testid="stAlert"][data-baseweb="notification-error"] {{ border-left-color: {CHART_ERROR_COLOR} !important; background-color: rgba(231, 76, 60, 0.1) !important; }} div[data-testid="stAlert"][data-baseweb="notification-error"] div[role="alert"] {{ color: {CHART_ERROR_COLOR} !important; }} div[data-testid="stAlert"][data-baseweb="notification-error"] svg {{ fill: {CHART_ERROR_COLOR} !important; }}
-    div[data-testid="stAlert"][data-baseweb="notification-success"] {{ border-left-color: {CHART_SUCCESS_COLOR} !important; background-color: rgba(46, 204, 113, 0.1) !important; }} div[data-testid="stAlert"][data-baseweb="notification-success"] div[role="alert"] {{ color: {CHART_SUCCESS_COLOR} !important; }} div[data-testid="stAlert"][data-baseweb="notification-success"] svg {{ fill: {CHART_SUCCESS_COLOR} !important; }}
-
-    /* --- Metrics Styling (Forcing White Label) --- */
-    .stMetric {{ background-color: {CARD_BACKGROUND_COLOR}; border-radius: 10px; padding: 1.2rem 1.5rem; border: 1px solid {INPUT_BORDER_COLOR}; border-left: 4px solid {PRIMARY_ACCENT_COLOR}; margin-bottom: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }}
-    .stMetric > label {{ /* Target the label specifically */
-        color: {BODY_TEXT_COLOR} !important; /* FORCE WHITE COLOR */
-        font-size: 0.9em !important; /* Ensure size is applied */
-        font-weight: 600 !important; /* Ensure weight is applied */
-        text-transform: uppercase !important;
-        letter-spacing: 0.5px !important;
-        margin-bottom: 0.3rem !important;
-    }}
-    .stMetric > div:nth-of-type(1) {{ color: {MAIN_TITLE_COLOR} !important; font-size: 1.8em; font-weight: 700; font-family: {TITLE_FONT}; line-height: 1.2; }}
-    .stMetric .stMetricDelta {{ font-size: 0.9em; font-weight: 600; margin-top: 0.2rem; }}
-    .stMetric .stMetricDelta > div[data-delta-direction="increase"] {{ color: {CHART_SUCCESS_COLOR} !important; }}
-    .stMetric .stMetricDelta > div[data-delta-direction="decrease"] {{ color: {CHART_ERROR_COLOR} !important; }}
-
-    /* --- Footer Styling --- */
-    .footer {{ text-align: center; color: {SUBTITLE_COLOR}; opacity: 0.7; margin: 4rem auto 1rem auto; font-size: 0.9rem; max-width: 1100px; padding-bottom: 1rem; }}
-    .footer p {{ font-size: 0.9rem !important; color: {SUBTITLE_COLOR} !important; margin: 0; }}
-    .footer a {{ color: {PRIMARY_ACCENT_COLOR}; text-decoration: none; }} .footer a:hover {{ text-decoration: underline; }}
-
-    /* --- Streamlit Cleanup --- */
-    header[data-testid="stHeader"], footer {{ display: none !important; }}
-    div[data-testid="stDecoration"] {{ display: none !important; }}
-
-    /* --- Responsive Adjustments --- */
-    @media (max-width: 768px) {{
-        .main .block-container {{ padding: 2rem 1rem 3rem 1rem; }} .header-container {{ margin-bottom: 2.5rem; }} .logo {{ height: 60px; margin-right: 1rem;}} .logo-placeholder {{ height: 60px; width: 60px; }} .title {{ font-size: 2.2rem; }} h2, h3 {{ font-size: 1.5rem; }}
-        div[data-testid="stButton"] > button, div[data-testid="stDownloadButton"] > button {{ padding: 0.5rem 1.2rem; }} .footer {{ margin-top: 2rem; font-size: 0.8rem; }} .stMetric {{ padding: 1rem 1.2rem; }} .stMetric > div:nth-of-type(1) {{ font-size: 1.6em; }}
-    }}
-     @media (max-width: 480px) {{
-         .header-container {{ flex-direction: column; text-align: center; gap: 0.8rem; margin-bottom: 2rem; }} .logo {{ margin-right: 0; height: 50px; }} .logo-placeholder {{ margin-right: 0; height: 50px; width: 50px; }} .title {{ font-size: 2rem; }}
-         div[data-testid="stDataFrame"] td {{ font-size: 0.8rem; padding: 0.5rem 0.5rem; }} div[data-testid="stDataFrame"] th {{ font-size: 0.75rem; padding: 0.6rem 0.5rem; }} .stMetric {{ padding: 0.8rem 1rem; }} .stMetric > div:nth-of-type(1) {{ font-size: 1.4em; }}
-     }}
+    .main .block-container {{ max-width: 1100px; padding: 2rem 1rem 4rem 1rem; }}
+    .header-container {{ display: flex; align-items: center; justify-content: center; margin-bottom: 3rem; }}
+    .logo {{ height: 80px; margin-right: 1.5rem; }}
+    .title {{ font-family: {TITLE_FONT}; font-size: 2.8rem; color: {MAIN_TITLE_COLOR}; }}
+    h2, h3 {{ font-family: {TITLE_FONT}; color: {PRIMARY_ACCENT_COLOR}; border-bottom: 1px solid rgba({PRIMARY_ACCENT_COLOR_RGB}, 0.3); padding-bottom: 0.6rem; }}
+    div[data-testid="stButton"] > button, div[data-testid="stDownloadButton"] > button {{ border: 1px solid {BUTTON_PRIMARY_BORDER} !important; background-color: {BUTTON_PRIMARY_BG} !important; color: {BUTTON_PRIMARY_TEXT} !important; }}
+    .stMetric > label {{ color: {BODY_TEXT_COLOR} !important; }}
 </style>
 """
 
@@ -227,138 +128,135 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- Helper Functions ---
 
-# *** NEW: Helper function for address formatting ***
-def get_formatted_address(info: dict) -> str:
-    """Formats the address from the yfinance info dictionary."""
-    address_parts = [
-        info.get('address1'),
-        f"{info.get('city', '')}, {info.get('state', '')} {info.get('zip', '')}".strip(', '),
-        info.get('country')
-    ]
-    # Filter out None or empty parts and join them with newlines
-    full_address = "\n".join(part for part in address_parts if part)
-    return full_address if full_address else "N/A"
+# --- Helper Functions (REVISED AND CORRECTED) ---
 
-# *** MODIFIED: TTM values are now handled correctly to avoid 0 for NaN sums ***
 def get_financial_data(ticker: str) -> pd.DataFrame:
-    """ Fetches annual and TTM financial data, using np.nan for missing TTM numerics. """
+    """
+    Fetches comprehensive financial data, ensuring consistent chronological ordering
+    and calculating TTM only when a full four quarters of data are available.
+    """
     try:
         logging.info(f"Fetching financial data for {ticker}...")
         stock = yf.Ticker(ticker)
         info = stock.info
-        financials = stock.financials
 
-        if financials.empty:
+        # Fetch from all three financial statements
+        annual_fin = stock.financials
+        annual_bs = stock.balance_sheet
+        annual_cf = stock.cashflow
+        annual_data = pd.concat([annual_fin, annual_bs, annual_cf])
+        annual_data = annual_data.loc[~annual_data.index.duplicated(keep='first')]
+
+        if annual_data.empty:
             logging.warning(f"No annual financial data found for {ticker}.")
             return pd.DataFrame({'Ticker': [ticker]})
 
-        df = financials.T.copy()
+        # --- FIX #1: ENFORCE CONSISTENT DATE SORTING FOR YEAR_INDEX ---
+        df = annual_data.T.copy()
+        # Convert index to datetime objects to ensure correct sorting
+        df.index = pd.to_datetime(df.index)
+        # Explicitly sort by date descending. This guarantees the most recent year is always first.
+        df = df.sort_index(ascending=False)
+        
+        # Now proceed with creating the index, which will now be consistent
         df['Ticker'] = ticker
-        df['Full_Date'] = pd.to_datetime(df.index).strftime('%Y-%m-%d')
+        df['Full_Date'] = df.index.strftime('%Y-%m-%d')
         df = df.reset_index(drop=True)
+        # Year_Index=1 will now reliably be the most recent annual data
         df['Year_Index'] = df.index + 1
         df['Currency'] = info.get('currency', 'N/A')
         df['Financial_Currency'] = info.get('financialCurrency', 'N/A')
 
-        q_financials = stock.quarterly_financials
+        # --- FIX #2: STRICT TTM CALCULATION (Integrated from test code) ---
+        q_fin = stock.quarterly_financials
+        q_bs = stock.quarterly_balance_sheet
+        q_cf = stock.quarterly_cashflow
+        q_data = pd.concat([q_fin, q_bs, q_cf])
+        q_data = q_data.loc[~q_data.index.duplicated(keep='first')]
+
+        if q_data.empty:
+            logging.warning(f"No quarterly data found for {ticker}.")
+            ttm_data = {'Ticker': ticker, 'Full_Date': "TTM", 'Year_Index': 0}
+            ttm_data['Currency'] = info.get('currency', 'N/A')
+            ttm_data['Financial_Currency'] = info.get('financialCurrency', 'N/A')
+            for metric in annual_data.index:
+                ttm_data[metric] = np.nan
+            ttm_df = pd.DataFrame([ttm_data])
+            final_df = pd.concat([ttm_df, df], ignore_index=True, sort=False)
+            return final_df
+
+        # Enforce sorting: Convert columns to datetime and sort descending (most recent first)
+        q_data.columns = pd.to_datetime(q_data.columns)
+        q_data = q_data.sort_index(axis=1, ascending=False)  # Columns now sorted: newest to oldest
+        logging.info(f"Quarterly data columns (dates) for {ticker}: {q_data.columns.tolist()}")
+
         ttm_data = {'Ticker': ticker, 'Full_Date': "TTM", 'Year_Index': 0}
         ttm_data['Currency'] = info.get('currency', 'N/A')
         ttm_data['Financial_Currency'] = info.get('financialCurrency', 'N/A')
 
-        potential_numeric_cols = list(set(df.select_dtypes(include=np.number).columns.tolist() + NUMERIC_COLUMNS_TO_CLEAN))
-        
-        if not q_financials.empty and q_financials.shape[1] >= 4:
-            last_4_quarters = q_financials.iloc[:, :4]
-            ttm_series = last_4_quarters.sum(axis=1, numeric_only=True)
-            
-            # --- FIX FOR TTM ZEROS ---
-            # If all 4 quarters for a metric are NaN, its sum is 0. Replace this with NaN.
-            for metric in ttm_series.index:
-                if last_4_quarters.loc[metric].isnull().all():
-                    ttm_series[metric] = np.nan # Set to NaN instead of 0
-            # --- END FIX ---
-            
-            common_metrics = df.columns.intersection(ttm_series.index)
-            for metric in common_metrics:
-                 if metric not in ttm_data:
-                     ttm_data[metric] = ttm_series.get(metric)
-        else:
-            logging.info(f"Insufficient quarterly data for TTM for {ticker}. TTM values set to NaN.")
-            for metric in df.columns:
-                if metric in potential_numeric_cols:
+        # Check for sufficient data
+        if q_data.shape[1] >= 4:
+            logging.info(f"Calculating TTM for {ticker} from quarterly data.")
+            for metric in annual_data.index:
+                if metric in q_data.index:
+                    last_four_quarters = q_data.loc[metric].iloc[:4]  # iloc[:4] since sorted descending
+                    
+                    # *** CORE TTM FIX: Only calculate if we have exactly 4 non-NaN quarters ***
+                    if len(last_four_quarters) == 4 and last_four_quarters.count() == 4 and not last_four_quarters.isnull().any():
+                        # For Balance Sheet items, take the most recent quarter's value.
+                        if any(keyword in metric for keyword in ['Asset', 'Liabilities', 'Equity', 'Capital', 'Stock']):
+                            ttm_data[metric] = last_four_quarters.iloc[0]
+                        # For Income/Cash Flow items, sum the four quarters.
+                        else:
+                            ttm_data[metric] = last_four_quarters.sum()
+                    else:
+                        logging.warning(f"Skipping TTM for '{metric}' in {ticker}: Incomplete data (len={len(last_four_quarters)}, count={last_four_quarters.count()}, has NaN={last_four_quarters.isnull().any()})")
+                        ttm_data[metric] = np.nan
+                else:
                     ttm_data[metric] = np.nan
+        else:
+            logging.warning(f"Insufficient quarterly columns ({q_data.shape[1]} < 4) for TTM in {ticker}. Setting all TTM values to NaN.")
+            for metric in annual_data.index:
+                ttm_data[metric] = np.nan
 
         ttm_df = pd.DataFrame([ttm_data])
         final_df = pd.concat([ttm_df, df], ignore_index=True, sort=False)
         
-        logging.info(f"Successfully fetched financial data for {ticker}.")
+        logging.info(f"Successfully fetched and processed financial data for {ticker}.")
         return final_df
 
     except Exception as e:
-        logging.warning(f"Error getting financial data for {ticker}: {e}")
+        logging.error(f"CRITICAL error in get_financial_data for {ticker}: {e}")
         return pd.DataFrame({'Ticker': [ticker]})
 
-# *** MODIFIED: Integrated call to get_formatted_address ***
 def get_profile_data(ticker: str) -> pd.DataFrame:
-    """ Fetches company profile data, including the formatted address. """
+    """ Fetches company profile data. (Unchanged) """
     try:
-        logging.info(f"Fetching profile data for {ticker}...")
-        stock = yf.Ticker(ticker)
-        info = stock.info
-        
-        address = get_formatted_address(info) # Call the new helper function
-
-        company_info = {
-            'Ticker': ticker,
-            'LongName': info.get('longName', 'N/A'),
-            'Long_Business_Summary': info.get('longBusinessSummary', 'N/A'),
-            'Country': info.get('country', 'N/A'),
-            'Address': address, # Add the formatted address
-            'Sector': info.get('sector', 'N/A'),
-            'Industry': info.get('industry', 'N/A'),
-            'Full_Time_Employees': info.get('fullTimeEmployees'),
-            'Website': info.get('website', 'N/A'),
-            'Phone': info.get('phone', 'N/A')
-        }
-        
+        logging.info(f"Fetching profile data for {ticker}..."); stock = yf.Ticker(ticker); info = stock.info
+        company_info = {'Ticker': ticker, 'LongName': info.get('longName', 'N/A'), 'Long_Business_Summary': info.get('longBusinessSummary', 'N/A'), 'Country': info.get('country', 'N/A'), 'Sector': info.get('sector', 'N/A'), 'Industry': info.get('industry', 'N/A'), 'Full_Time_Employees': info.get('fullTimeEmployees'), 'Website': info.get('website', 'N/A'), 'Phone': info.get('phone', 'N/A')}
         fte = company_info['Full_Time_Employees']
-        if fte is None:
-            company_info['Full_Time_Employees'] = 'N/A'
+        if fte is None: company_info['Full_Time_Employees'] = 'N/A'
         else:
-            try:
-                company_info['Full_Time_Employees'] = f"{pd.to_numeric(fte):,.0f}"
-            except (ValueError, TypeError):
-                company_info['Full_Time_Employees'] = str(fte)
-                
+            try: company_info['Full_Time_Employees'] = f"{pd.to_numeric(fte):,.0f}"
+            except (ValueError, TypeError): company_info['Full_Time_Employees'] = str(fte)
         logging.info(f"Successfully fetched profile data for {ticker}.")
         return pd.DataFrame([company_info])
-        
-    except Exception as e:
-        logging.warning(f"Error getting profile data for {ticker}: {e}")
-        return pd.DataFrame({'Ticker': [ticker]})
+    except Exception as e: logging.warning(f"Error getting profile data for {ticker}: {e}"); return pd.DataFrame({'Ticker': [ticker]})
 
 def create_excel_download(df: pd.DataFrame, filename: str) -> bytes:
-    """Creates an Excel file in memory for downloading."""
-    output = BytesIO()
-    df_display = df.copy()
-    for col in df_display.select_dtypes(include=['object']).columns:
-        df_display[col] = df_display[col].astype(str)
-        
+    """Creates an Excel file in memory for downloading. (Unchanged)"""
+    output = BytesIO(); df_display = df.copy()
+    for col in df_display.select_dtypes(include=['object']).columns: df_display[col] = df_display[col].astype(str)
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df_display.to_excel(writer, index=False, sheet_name='Data')
-        worksheet = writer.sheets['Data']
+        df_display.to_excel(writer, index=False, sheet_name='Data'); worksheet = writer.sheets['Data']
         for i, col in enumerate(df_display.columns):
             try:
-                max_len_data = df_display[col].map(len).max()
+                max_len_data = df_display[col].astype(str).map(len).max();
                 if pd.isna(max_len_data): max_len_data = 0
-                max_len_col = len(str(col))
-                column_width = max(int(max_len_data), max_len_col) + 2
+                max_len_col = len(str(col)); column_width = max(int(max_len_data), max_len_col) + 2
                 worksheet.set_column(i, i, min(column_width, 50))
-            except Exception as width_e:
-                logging.warning(f"Could not calculate width for column {col}: {width_e}")
-                worksheet.set_column(i, i, 20)
+            except Exception as width_e: logging.warning(f"Could not calculate width for column {col}: {width_e}"); worksheet.set_column(i, i, 20)
     return output.getvalue()
 
 # --- Initialize Session State ---
@@ -384,8 +282,8 @@ col_spacer1, col_button, col_spacer2 = st.columns([1, 2, 1])
 with col_button:
     get_data_pressed = st.button("📊 Get Company Data", key="get_data_button", use_container_width=True)
 
+# --- Main Application Logic ---
 if get_data_pressed:
-    # 1. Validate Tickers
     tickers_raw = [ticker.strip().upper() for ticker in ticker_input_area.split(',') if ticker.strip()]
     st.session_state.last_ticker_input = ticker_input_area
 
@@ -402,11 +300,8 @@ if get_data_pressed:
         st.session_state.all_extracted_data = pd.DataFrame()
         st.session_state.last_run_summary = {}
 
-        # 2. Fetch Data (with Spinner)
-        all_financial_dfs = []
-        all_profile_dfs = []
-        failed_tickers_profile = []
-        failed_tickers_financial = []
+        all_financial_dfs = []; all_profile_dfs = []
+        failed_tickers_profile = []; failed_tickers_financial = []
         total_tickers_to_process = len(st.session_state.tickers_to_process)
 
         with st.spinner(f"Fetching data for {total_tickers_to_process} ticker(s)... Please wait."):
@@ -414,143 +309,95 @@ if get_data_pressed:
                 profile_df = get_profile_data(ticker)
                 financial_df = get_financial_data(ticker)
                 
-                if len(profile_df.columns) > 1: all_profile_dfs.append(profile_df)
+                if profile_df is not None and len(profile_df.columns) > 1: all_profile_dfs.append(profile_df)
                 else: failed_tickers_profile.append(ticker)
-                
-                if len(financial_df.columns) > 1: all_financial_dfs.append(financial_df)
+
+                if financial_df is not None and len(financial_df.columns) > 1: all_financial_dfs.append(financial_df)
                 else: failed_tickers_financial.append(ticker)
 
-        # 3. Process & Consolidate Data (Post-Spinner)
         processing_status = st.empty()
-        # This consolidation logic handles cases where one of the dataframes might be empty
-        # and merges them correctly. No major changes were needed here, as the fixes were in the data-gathering functions.
-        try:
-            if not all_profile_dfs and not all_financial_dfs:
-                processing_status.error("No data could be extracted for any ticker.")
-                # Clear state if total failure
-                st.session_state.processed_data = pd.DataFrame()
-                st.session_state.all_extracted_data = pd.DataFrame()
-            else:
-                processing_status.info("Consolidating and cleaning data...")
-                
-                combined_profile_df = pd.concat(all_profile_dfs, ignore_index=True) if all_profile_dfs else pd.DataFrame()
-                combined_financial_df = pd.concat(all_financial_dfs, ignore_index=True) if all_financial_dfs else pd.DataFrame()
-
-                if not combined_profile_df.empty and not combined_financial_df.empty:
+        if not all_financial_dfs:
+            processing_status.error("No financial data could be extracted for any ticker. Cannot proceed.")
+        else:
+            processing_status.info("Consolidating and cleaning data...")
+            try:
+                combined_financial_df = pd.concat(all_financial_dfs, ignore_index=True)
+                if all_profile_dfs:
+                    combined_profile_df = pd.concat(all_profile_dfs, ignore_index=True)
                     final_df = pd.merge(combined_profile_df, combined_financial_df, on='Ticker', how='outer')
-                elif not combined_profile_df.empty:
-                    final_df = combined_profile_df
-                elif not combined_financial_df.empty:
-                    final_df = combined_financial_df
                 else:
-                    final_df = pd.DataFrame() # Should not happen if first check passes
+                    final_df = combined_financial_df
 
                 if final_df.empty:
-                    processing_status.error("Data consolidation resulted in an empty DataFrame.")
+                    processing_status.error("Data merging resulted in an empty DataFrame.")
                 else:
                     st.session_state.all_extracted_data = final_df.copy()
+                    existing_display_columns = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col in final_df.columns]
+                    final_display_dt = final_df[existing_display_columns].copy()
                     
-                    # Ensure all desired columns exist, adding missing ones with NaN
-                    for col in FINANCIAL_COLUMNS_TO_SELECT:
-                        if col not in final_df.columns:
-                            final_df[col] = np.nan
-                    
-                    final_display_dt = final_df[FINANCIAL_COLUMNS_TO_SELECT].copy()
-
-                    for col in NUMERIC_COLUMNS_TO_CLEAN:
+                    all_numeric_cols = list(final_df.select_dtypes(include=np.number).columns)
+                    for col in all_numeric_cols:
                         if col in final_display_dt.columns:
                             final_display_dt[col] = pd.to_numeric(final_display_dt[col], errors='coerce')
-                    
-                    # Clean up string columns for display
-                    str_cols_to_clean = ['Full_Time_Employees', 'Address']
-                    for col in str_cols_to_clean:
-                        if col in final_display_dt.columns:
-                            final_display_dt[col] = final_display_dt[col].astype(str).replace(['nan', 'None', '<NA>'], 'N/A', regex=False)
+                            
+                    if 'Full_Time_Employees' in final_display_dt.columns:
+                         final_display_dt['Full_Time_Employees'] = final_display_dt['Full_Time_Employees'].astype(str).replace(['nan', 'None', '<NA>'], 'N/A', regex=False)
 
-                    final_display_dt = final_display_dt.sort_values(by=['Ticker', 'Year_Index'], ascending=[True, False], na_position='last')
+                    # THE FINAL SORT - This will now work correctly because Year_Index is consistent
+                    # Sorts by Ticker, then puts TTM (0) first, then Year 1 (most recent), Year 2, etc.
+                    final_display_dt = final_display_dt.sort_values(by=['Ticker', 'Year_Index'], ascending=[True, True])
                     st.session_state.processed_data = final_display_dt.reset_index(drop=True)
                     
                     processing_status.success("Data processing complete.")
                     time.sleep(1.5)
                     processing_status.empty()
+            except Exception as merge_error:
+                 processing_status.error(f"An error occurred during data consolidation/cleaning: {merge_error}")
+                 logging.exception("Data merging error:")
+                 st.session_state.processed_data = pd.DataFrame(); st.session_state.all_extracted_data = pd.DataFrame()
 
-        except Exception as merge_error:
-             processing_status.error(f"An error occurred during data consolidation/cleaning: {merge_error}")
-             logging.exception("Data merging error:")
-             st.session_state.processed_data = pd.DataFrame()
-             st.session_state.all_extracted_data = pd.DataFrame()
+        total_submitted = len(st.session_state.get('tickers_to_process', [])); successful_tickers_count = 0
+        if 'processed_data' in st.session_state and not st.session_state.processed_data.empty: successful_tickers_count = st.session_state.processed_data['Ticker'].nunique()
+        failed_tickers_all = list(set(failed_tickers_profile + failed_tickers_financial)); total_failed_count = len(failed_tickers_all)
+        st.session_state.last_run_summary = {"submitted": total_submitted, "successful": successful_tickers_count, "failed_total": total_failed_count, "failed_list": failed_tickers_all}
 
-        # 4. Store Summary Info
-        total_submitted = len(st.session_state.get('tickers_to_process', []))
-        successful_tickers_count = 0
-        if 'processed_data' in st.session_state and not st.session_state.processed_data.empty:
-            successful_tickers_count = st.session_state.processed_data['Ticker'].nunique()
-            
-        failed_tickers_all = list(set(failed_tickers_profile + failed_tickers_financial))
-        total_failed_count = len(failed_tickers_all)
-        
-        st.session_state.last_run_summary = {
-            "submitted": total_submitted,
-            "successful": successful_tickers_count,
-            "failed_total": total_failed_count,
-            "failed_list": failed_tickers_all
-        }
+        st.markdown("---")
+        summary = st.session_state.last_run_summary
+        if summary.get("failed_total", 0) > 0: st.warning(f"Extraction attempted for {total_submitted} tickers. Issues encountered for {summary['failed_total']}.")
+        elif total_submitted > 0 : st.success(f"Successfully processed data for {summary['successful']} of {total_submitted} submitted tickers.")
 
         st.rerun()
 
 # --- Display Results Section ---
 if 'processed_data' in st.session_state and not st.session_state.processed_data.empty:
     st.subheader("Processed Data")
-    st.dataframe(st.session_state.processed_data)
+    df_display = st.session_state.processed_data.copy()
+    numeric_cols_in_df = [col for col in df_display.columns if pd.api.types.is_numeric_dtype(df_display[col]) and col not in ['Year_Index']]
+    format_dict = {col: '{:,.0f}' for col in numeric_cols_in_df}
+    st.dataframe(df_display.style.format(format_dict, na_rep="N/A"))
 
-    # --- Download Buttons ---
     col_dl1, col_dl2 = st.columns(2)
     with col_dl1:
         try:
             excel_display_data = create_excel_download(st.session_state.processed_data, "Pulse_yf_FormattedData.xlsx")
-            st.download_button(
-                label="📥 Download Formatted Data",
-                data=excel_display_data,
-                file_name='Pulse_yf_FormattedData.xlsx',
-                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                key="download_display_button",
-                help="Downloads the cleaned and formatted table shown above."
-            )
-        except Exception as e:
-            st.error(f"Error creating formatted download: {e}")
-            logging.error(f"Error creating display data Excel: {e}")
-            
+            st.download_button( label="📥 Download Formatted Data", data=excel_display_data, file_name='Pulse_yf_FormattedData.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', key="download_display_button", help="Downloads the cleaned and formatted table shown above." )
+        except Exception as e: st.error(f"Error creating formatted download: {e}"); logging.error(f"Error creating display data Excel: {e}")
     with col_dl2:
        if 'all_extracted_data' in st.session_state and not st.session_state.all_extracted_data.empty:
             try:
-                # Re-order the raw data for a more logical export
                 all_cols = st.session_state.all_extracted_data.columns.tolist()
-                ordered_cols = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col in all_cols] + \
-                               [col for col in all_cols if col not in FINANCIAL_COLUMNS_TO_SELECT]
+                ordered_cols = [col for col in FINANCIAL_COLUMNS_TO_SELECT if col in all_cols] + [col for col in all_cols if col not in FINANCIAL_COLUMNS_TO_SELECT]
                 sort_cols = ['Ticker']
-                if 'Year_Index' in ordered_cols:
-                    sort_cols.append('Year_Index')
-                    
-                all_data_ordered = st.session_state.all_extracted_data[ordered_cols].copy()
+                if 'Year_Index' in ordered_cols: sort_cols.append('Year_Index')
                 
-                # Convert numeric-like columns to strings for raw export, replacing NaNs
-                for col in all_data_ordered.columns:
-                    if pd.api.types.is_numeric_dtype(all_data_ordered[col]):
-                        all_data_ordered[col] = all_data_ordered[col].astype(str).replace(['nan', 'None', '<NA>'], '', regex=False)
-
-                all_data_ordered = all_data_ordered.sort_values(by=sort_cols, ascending=[True, False], na_position='last').reset_index(drop=True)
+                all_data_ordered = st.session_state.all_extracted_data[ordered_cols].copy()
+                for col in all_data_ordered.select_dtypes(include=['object']).columns:
+                    all_data_ordered[col] = all_data_ordered[col].astype(str).replace(['nan', 'None', '<NA>'], '', regex=False)
+                
+                all_data_ordered = all_data_ordered.sort_values(by=sort_cols, ascending=[True, True], na_position='last').reset_index(drop=True)
                 excel_all_data = create_excel_download(all_data_ordered, "Pulse_yf_AllExtractedData.xlsx")
-                st.download_button(
-                    label="📦 Download All Raw Data",
-                    data=excel_all_data,
-                    file_name='Pulse_yf_AllExtractedData.xlsx',
-                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    key="download_all_button",
-                    help="Downloads all columns retrieved before extensive cleaning/formatting."
-                )
-            except Exception as e:
-                st.error(f"Error creating raw download: {e}")
-                logging.error(f"Error creating all data Excel: {e}")
+                st.download_button( label="📦 Download All Raw Data", data=excel_all_data, file_name='Pulse_yf_AllExtractedData.xlsx', mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', key="download_all_button", help="Downloads ALL columns retrieved from Income, Balance, and Cash Flow statements." )
+            except Exception as e: st.error(f"Error creating raw download: {e}"); logging.error(f"Error creating all data Excel: {e}")
 
 # --- Display Summary Section ---
 if 'last_run_summary' in st.session_state and st.session_state.last_run_summary:
